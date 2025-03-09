@@ -19,6 +19,7 @@ cp -r specs ./your root project
 
 ##### 2. Copy folder networkscanner to directorey
 
+```
 RootProject/
 ├── android/
 │ ├── app/
@@ -26,6 +27,7 @@ RootProject/
 │ │ │ ├── main/
 │ │ │ │ ├── java/
 │ │ │ │ │ ├── networkscanner/
+```
 
 </br>
 
