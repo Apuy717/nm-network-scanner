@@ -31,10 +31,11 @@ RootProject/
 
 </br>
 
-##### 3. Add code
+##### 3. Add code to
+
+`RootProject/android/app/src/main/java/com/yourapp/MainApplication.kt`
 
 ```sh
-RootProject/android/app/src/main/java/com/yourapp/MainApplication.kt
 +import networkscanner.NetworkScannerPackage
 +add(NetworkScannerPackage())
 ```
@@ -94,8 +95,6 @@ class MainApplication : Application(), ReactApplication {
 ##### 4. Add to your package.json
 
 ```json
-package.json
-
 "codegenConfig": {
   "name": "NativeNetworkScannerSpec",
   "type": "modules",
