@@ -10,6 +10,7 @@ import com.networkscanner.NativeNetworkScannerSpec
 import java.net.InetAddress
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class NetworkScannerModule(reactContext: ReactApplicationContext) : NativeNetworkScannerSpec(reactContext) {
 
@@ -21,57 +22,71 @@ class NetworkScannerModule(reactContext: ReactApplicationContext) : NativeNetwor
         val linkProperties: LinkProperties = connectivityManager.getLinkProperties(activeNetwork) ?: return null
 
         return linkProperties.routes
-            .firstOrNull { it.isDefaultRoute } // Cari default gateway
+            .firstOrNull { it.isDefaultRoute }
             ?.gateway?.hostAddress
     }
 
     @ReactMethod
     override fun scanNetwork(promise: Promise) {
-        val gatewayIP = getGatewayIP() ?: return promise.reject("ERROR", "Failed Got IP GATEWAY")
-        val subnet = gatewayIP.substringBeforeLast(".") // Sample got: "192.168.1"
+        val gatewayIP = getGatewayIP() ?: return promise.reject("ERROR", "Failed to get IP GATEWAY")
+        val subnet = gatewayIP.substringBeforeLast(".") // e.g., "192.168.1"
 
         val executor = Executors.newFixedThreadPool(20)
-        val devices : WritableArray = Arguments.createArray()
+        val devices: WritableArray = Arguments.createArray()
 
+        val taskCounter = AtomicInteger(254) // Untuk memastikan semua task selesai sebelum resolve
         for (i in 1..254) {
             executor.execute {
                 try {
                     val ipAddress = "$subnet.$i"
                     val inetAddress = InetAddress.getByName(ipAddress)
 
-                    if (inetAddress.isReachable(100)) {
-                        if (isSonoff(ipAddress)) {
-                            synchronized(devices) { devices.pushString(ipAddress) }
+                    if (inetAddress.isReachable(500)) {
+                        Log.d("FIP", ipAddress)
+                        isSonoff(ipAddress) { isSonoff ->
+                            if (isSonoff) {
+                                synchronized(devices) { devices.pushString(ipAddress) }
+                            }
+                            if (taskCounter.decrementAndGet() == 0) {
+                                promise.resolve(devices)
+                            }
+                        }
+                    } else {
+                        Log.d("IP NOT FOUND", "not found")
+                        if (taskCounter.decrementAndGet() == 0) {
+                            promise.resolve(devices)
                         }
                     }
                 } catch (e: Exception) {
                     Log.e("NetworkScanner", "Error scanning $i", e)
+                    if (taskCounter.decrementAndGet() == 0) {
+                        promise.resolve(devices)
+                    }
                 }
             }
         }
-
         executor.shutdown()
-        executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)
-        promise.resolve(devices)
     }
 
-
-    private fun isSonoff(ipAddress: String): Boolean {
-        try {
-            val url = URL("http://$ipAddress/cm?cmnd=Status")
-            val connection = url.openConnection()
-            connection.connectTimeout = 500
-            connection.getInputStream().use {
-                val response = it.bufferedReader().readText()
-                Log.d("Response", response)
-                if (response.contains("{\"WARNING\":\"Need user=<username>&password=<password>\"}") || response.contains("FriendlyName")) {
-                    return true
+    private fun isSonoff(ipAddress: String, callback: (Boolean) -> Unit) {
+        Executors.newSingleThreadExecutor().execute {
+            try {
+                val url = URL("http://$ipAddress/cm?cmnd=Status")
+                val connection = url.openConnection()
+                connection.connectTimeout = 100
+                connection.getInputStream().use {
+                    val response = it.bufferedReader().readText()
+                    Log.d("Response Success", "$ipAddress $response")
+                    if (response.contains("WARNING") || response.contains("FriendlyName")) {
+                        callback(true)
+                        return@execute
+                    }
                 }
+            } catch (e: Exception) {
+                Log.d("Response Err", e.message.toString())
             }
-        } catch (_: Exception) {
-            return false
+            callback(false)
         }
-        return false
     }
 
     companion object {
